@@ -1,0 +1,41 @@
+preprocessing:
+  - name: GroupMeanImputer
+    class: GroupMeanPreprocessor
+    params:
+      target_col: ['Guest_Popularity_percentage', 'Episode_Length_minutes']
+
+  - name: FillImputer
+    class: FillPreprocessor
+    params:
+      method: median
+      target: ['Number_of_Ads']
+
+  - name: LabelEncoder
+    class: LabelEncoding
+    params:
+      nominal_col: ['Publication_Day', 'Publication_Time']
+
+  - name: OneHotEncoder
+    class: OneHotEncoding
+    params:
+      columns: ['Genre']
+
+  - name: TargetEncoder
+    class: TargetEncodingKFold
+    params:
+      col_name: 'Podcast_Name'
+      target_col: 'Listening_Time_minutes'
+
+  - name: DictMapper
+    class: DictMapping
+    params:
+      column: 'Episode_Sentiment'
+      mapping_dict:
+        Positive: 1
+        Neutral: 0
+        Negative: -1
+
+  - name: NumberEncoding
+    class: ExtractNumber
+    params:
+      column: ['Episode_Title']
