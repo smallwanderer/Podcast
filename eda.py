@@ -5,7 +5,7 @@ import yaml
 import shutil
 from ydata_profiling import ProfileReport
 
-name = 'preprocessed02'
+name = 'preprocessed03'
 dataset_dir = './datasets'
 
 print(f"Making File Name {name} ... ")
@@ -25,6 +25,8 @@ preprocessor_classes = {
     "TargetEncodingKFold": TargetEncodingKFold,
     "DictMapping": DictMapping,
     "ExtractNumber" : ExtractNumber,
+    "OutlierRemover" : OutlierRemover,
+    "PercentageOutlierRemover": PercentageOutlierRemover,
 }
 
 class PreprocessingPipeline:
@@ -82,11 +84,10 @@ builder = PreprocessingPipelineFromConfig(config_path)
 pipeline = builder.load_config()
 
 train_df = pipeline.fit(train_df).transform(train_df)
-train_df.to_csv(f"{dataset_dir}/{name}/preprocessed02.csv")
-
 pd.set_option('display.max_columns', None)
 print(train_df.head())
 
+train_df.to_csv(f"{dataset_dir}/{name}/{name}.csv")
 profile = ProfileReport(train_df, title="Train Data EDA Report", explorative=True)
 profile.to_file(f"{dataset_dir}/{name}/{name}_eda_report.html")
 test_df = pipeline.transform(test_df)

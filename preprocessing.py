@@ -3,6 +3,7 @@ import numpy as np
 import sklearn.preprocessing as sk
 from sklearn.model_selection import KFold
 import itertools
+import re
 
 pd.set_option('display.max_columns', None)
 
@@ -75,7 +76,7 @@ class GroupMeanPreprocessor(BasePreprocessor):
   결측치를 설명력이 높은 컬럼 조합(group)을 기반으로 계산된 평균값으로 계층적으로 순차적으로 채우되,
   학습 데이터 기준으로 계산한 평균값을 테스트 데이터에도 동일하게 재사용할 수 있도록 만드는 전처리기입니다.
   선택되는 칼럼명의 결합은 도메인 기반의 판단으로 선택되었으므로
-  해당 함수의 수정이 필요하면 eda.py에서 각 컬럼의 결과값을 기준으로 수정하시길 바랍니다.
+  해당 함수의 수정이 필요하면 vif.py에서 각 컬럼의 결과값을 기준으로 수정하시길 바랍니다.
   출력:
   Groupwise Mean Imputation을 수행한 Dataframe
   """
@@ -110,7 +111,7 @@ class GroupMeanPreprocessor(BasePreprocessor):
         fill_values = df.loc[mask, group].apply(lambda row: means.get(tuple(row), np.nan), axis=1)
         df.loc[mask, target] = df.loc[mask, target].fillna(fill_values)
         mask = df[target].isna()
-      print(f"{target} 결측치 처리 완료 \n" if df[target].isna().sum() == 0 else f"{target} 실패")
+      print(f"{target} 결측치 처리 완료" if df[target].isna().sum() == 0 else f"{target} 실패")
     return df
 
   def fit_transform(self, df):
@@ -142,7 +143,7 @@ class FillPreprocessor(BasePreprocessor):
     df = df.copy()
     for target in self.target:
       df[target] = df[target].fillna(self.fill_map[target])
-      print(f"{target} 결측치 처리 완료 \n" if df[target].isna().sum() == 0 else f"{target} 실패")
+      print(f"{target} 결측치 처리 완료" if df[target].isna().sum() == 0 else f"{target} 실패")
     return df
 
   def fit_transform(self, df):
@@ -176,12 +177,14 @@ class LabelEncoding(BaseEncoder):
     df = df.copy()
     for col in self.nominal_col:
       df[col] = self.encoder[col].transform(df[col])
-      print(f"Label Encoding {col} encoded\n")
+      print(f"Label Encoding {col} 인코딩 완료")
     return df
 
 
 class OneHotEncoding(BaseEncoder):
-  def __init__(self, columns):
+  def __init__(self, columns=None):
+    if columns is None:
+      columns = ['Genre']
     self.columns = columns
     self.drop_column = None
 
@@ -191,9 +194,9 @@ class OneHotEncoding(BaseEncoder):
       col for col in dummy_df.columns
       if any(col.startswith(f"{feature}_") for feature in self.columns)
     ]
-
     dummy_columns = sorted(dummy_columns)
     self.drop_column = dummy_columns[0] if dummy_columns else None
+    print(f"One Hot 인코딩 완료 다음 열 삭제 예정 {self.drop_column}...")
 
   def transform(self, df):
     df = df.copy()
@@ -202,8 +205,7 @@ class OneHotEncoding(BaseEncoder):
 
     if self.drop_column in dummies:
       dummies = dummies.drop(columns=[self.drop_column])
-      print(f"One Hot Removed column: {self.drop_column}")
-    print(f"One Hot Generated columns : {len(dummies.columns.tolist())} \n")
+    print(f"One Hot Generated columns : {len(dummies.columns.tolist())}")
 
     df = df.drop(columns=self.columns)
     df = pd.concat([df, dummies], axis=1)
@@ -267,8 +269,10 @@ class TargetEncodingKFold(BaseEncoder):
       df_new[col_te] = df_new[self.col_name].map(self.category_mean_map)
       df_new[col_te] = df_new[col_te].fillna(self.global_mean)
 
+    print(f"Target 인코딩 {self.col_name} -> {self.target_col} 변환 완료")
     return df_new.drop(columns=[self.col_name])
 
+# 사용하지 않는 함수입니다.
 def target_encode_kfold(df, col_name, target_col, n_split=10, seed=42):
   df_new = df.copy()
   kf = KFold(n_splits=n_split, shuffle=True, random_state=seed)
@@ -296,4 +300,88 @@ class DictMapping(BaseEncoder):
   def transform(self, df):
     df = df.copy()
     df[self.column] = df[self.column].map(self.mapping_dict)
+    print(f"Dict 인코딩 {self.column} 변환 완료")
+    return df
+
+class ExtractNumber(BaseEncoder):
+  def __init__(self, column = None):
+    """
+    Parameters:
+      column (str): 숫자를 추출할 컬럼명
+    Return:
+      column_Number (Float)
+    """
+    if column is None:
+      column = ["Episode_Title"]
+    self.column = column
+
+  def fit(self, df):
+    return df
+
+  def transform(self, df):
+    df = df.copy()
+    for col in self.column:
+      new_col = f"{col}_Number"
+      df[new_col] = df[col].apply(lambda x: float(re.search(r'\d+', str(x)).group()) if re.search(r'\d+', str(x)) else None)
+      df.drop(columns=[col], inplace=True)
+      print(f"숫자 추출 완료: {col} → {new_col}")
+    return df
+
+
+class OutlierRemover(BasePreprocessor):
+  def __init__(self, columns=None, method="IQR", threshold=1.5):
+    """
+    Parameters:
+        columns (list): 이상치를 제거할 열 리스트
+        method (str): 'IQR' 또는 'zscore'
+        threshold (float): IQR multiplier or z-score threshold
+    """
+    self.columns = columns
+    self.method = method
+    self.threshold = threshold
+
+  def fit(self, df):
+    return self
+
+  def transform(self, df):
+    df = df.copy()
+    for col in self.columns:
+      if self.method == "IQR":
+        Q1 = df[col].quantile(0.25)
+        Q3 = df[col].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - self.threshold * IQR
+        upper_bound = Q3 + self.threshold * IQR
+        before = len(df)
+        df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
+        after = len(df)
+        print(f"[{col}] IQR 기준 이상치 제거 완료: {before - after}개 제거")
+      elif self.method == "zscore":
+        mean = df[col].mean()
+        std = df[col].std()
+        z = (df[col] - mean) / std
+        before = len(df)
+        df = df[(z.abs() <= self.threshold)]
+        after = len(df)
+        print(f"[{col}] z-score 기준 이상치 제거 완료: {before - after}개 제거")
+      else:
+        raise ValueError("지원하지 않는 이상치 제거 방법입니다.")
+    return df
+
+class PercentageOutlierRemover(BasePreprocessor):
+  def __init__(self, columns=None, low_bound=0, high_bound=100):
+    self.columns = columns
+    self.low_bound = low_bound
+    self.high_bound = high_bound
+
+  def fit(self, df):
+    return self
+
+  def transform(self, df):
+    df = df.copy()
+    for col in self.columns:
+      before = len(df)
+      df = df[(df[col] >= self.low_bound) & (df[col] <= self.high_bound)]
+      after = len(df)
+      print(f"[{col}] Percentage 기준 이상치 제거 완료: {before - after}개 제거")
     return df
