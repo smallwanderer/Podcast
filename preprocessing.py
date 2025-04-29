@@ -7,7 +7,6 @@ import re
 
 pd.set_option('display.max_columns', None)
 
-
 class BasePreprocessor:
   def fit(self, df: pd.DataFrame):
     return self
@@ -19,8 +18,6 @@ class BasePreprocessor:
 
 class GroupMeanPreprocessor(BasePreprocessor):
   def __init__(self, target_col=None):
-    if target_col is None:
-      target_col = ['Guest_Popularity_percentage', 'Episode_Length_minutes']
     self.target_col = target_col
     self.fill_map = {}
 
@@ -111,7 +108,6 @@ class GroupMeanPreprocessor(BasePreprocessor):
         fill_values = df.loc[mask, group].apply(lambda row: means.get(tuple(row), np.nan), axis=1)
         df.loc[mask, target] = df.loc[mask, target].fillna(fill_values)
         mask = df[target].isna()
-      print(f"{target} 결측치 처리 완료" if df[target].isna().sum() == 0 else f"{target} 실패")
     return df
 
   def fit_transform(self, df):
@@ -121,8 +117,6 @@ class GroupMeanPreprocessor(BasePreprocessor):
 
 class FillPreprocessor(BasePreprocessor):
   def __init__(self, method='mean', target=None):
-    if target is None:
-        target = ['Number_of_Ads']
     self.target = target
     self.method = method
     self.fill_map = {}
@@ -143,7 +137,6 @@ class FillPreprocessor(BasePreprocessor):
     df = df.copy()
     for target in self.target:
       df[target] = df[target].fillna(self.fill_map[target])
-      print(f"{target} 결측치 처리 완료" if df[target].isna().sum() == 0 else f"{target} 실패")
     return df
 
   def fit_transform(self, df):
@@ -161,8 +154,6 @@ class BaseEncoder:
 
 class LabelEncoding(BaseEncoder):
   def __init__(self, nominal_col=None):
-    if nominal_col is None:
-      nominal_col = ['Podcast_Name', 'Publication_Day', 'Publication_Time']
     self.nominal_col = nominal_col
     self.encoder = {}
 
@@ -177,7 +168,6 @@ class LabelEncoding(BaseEncoder):
     df = df.copy()
     for col in self.nominal_col:
       df[col] = self.encoder[col].transform(df[col])
-      print(f"Label Encoding {col} 인코딩 완료")
     return df
 
 
@@ -205,7 +195,6 @@ class OneHotEncoding(BaseEncoder):
 
     if self.drop_column in dummies:
       dummies = dummies.drop(columns=[self.drop_column])
-    print(f"One Hot Generated columns : {len(dummies.columns.tolist())}")
 
     df = df.drop(columns=self.columns)
     df = pd.concat([df, dummies], axis=1)
@@ -232,20 +221,28 @@ class TargetEncodingKFold(BaseEncoder):
       train : KFold를 이용한 인코딩 방식을 사용
       test : fit()에서 저장된 col_name의 groupby() 평균값을 사용
   """
-  def __init__(self, col_name, target_col, n_split=10, seed=42):
+  def __init__(self, col_name, target_col, n_split=5, smoothing=10, seed=42):
     self.col_name = col_name
     self.target_col = target_col
     self.n_split = n_split
+    self.smoothing = smoothing
     self.seed = seed
     self.global_mean = None
     self.category_mean_map = None
 
+  def _compute_smooth_mean(self, group_stats, global_mean):
+    """
+    group_stats: DataFrame with 'mean' and 'count'
+    """
+    m = self.smoothing
+    return (group_stats['mean'] * group_stats['count'] + global_mean * m) / (group_stats['count'] + m)
+
   def fit(self, df):
-    # 전체 평균 저장
     self.global_mean = df[self.target_col].mean()
 
-    # 전체 train set 기준 평균값 저장 (test용)
-    self.category_mean_map = df.groupby(self.col_name)[self.target_col].mean()
+    stats = df.groupby(self.col_name)[self.target_col].agg(['mean', 'count'])
+    smoothed = self._compute_smooth_mean(stats, self.global_mean)
+    self.category_mean_map = smoothed
     return self
 
   def transform(self, df):
@@ -259,9 +256,11 @@ class TargetEncodingKFold(BaseEncoder):
       for train_idx, val_idx in kf.split(df):
         train_fold = df.iloc[train_idx]
         val_fold = df.iloc[val_idx]
-        means = train_fold.groupby(self.col_name)[self.target_col].mean()
 
-        df_new.iloc[val_idx, df_new.columns.get_loc(col_te)] = val_fold[self.col_name].map(means)
+        stats = train_fold.groupby(self.col_name)[self.target_col].agg(['mean', 'count'])
+        smoothed = self._compute_smooth_mean(stats, self.global_mean)
+
+        df_new.iloc[val_idx, df_new.columns.get_loc(col_te)] = val_fold[self.col_name].map(smoothed)
 
       df_new[col_te] = df_new[col_te].fillna(self.global_mean)
 
@@ -269,7 +268,6 @@ class TargetEncodingKFold(BaseEncoder):
       df_new[col_te] = df_new[self.col_name].map(self.category_mean_map)
       df_new[col_te] = df_new[col_te].fillna(self.global_mean)
 
-    print(f"Target 인코딩 {self.col_name} -> {self.target_col} 변환 완료")
     return df_new.drop(columns=[self.col_name])
 
 # 사용하지 않는 함수입니다.
@@ -300,7 +298,6 @@ class DictMapping(BaseEncoder):
   def transform(self, df):
     df = df.copy()
     df[self.column] = df[self.column].map(self.mapping_dict)
-    print(f"Dict 인코딩 {self.column} 변환 완료")
     return df
 
 class ExtractNumber(BaseEncoder):
@@ -324,7 +321,6 @@ class ExtractNumber(BaseEncoder):
       new_col = f"{col}_Number"
       df[new_col] = df[col].apply(lambda x: float(re.search(r'\d+', str(x)).group()) if re.search(r'\d+', str(x)) else None)
       df.drop(columns=[col], inplace=True)
-      print(f"숫자 추출 완료: {col} → {new_col}")
     return df
 
 
@@ -352,18 +348,12 @@ class OutlierRemover(BasePreprocessor):
         IQR = Q3 - Q1
         lower_bound = Q1 - self.threshold * IQR
         upper_bound = Q3 + self.threshold * IQR
-        before = len(df)
         df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
-        after = len(df)
-        print(f"[{col}] IQR 기준 이상치 제거 완료: {before - after}개 제거")
       elif self.method == "zscore":
         mean = df[col].mean()
         std = df[col].std()
         z = (df[col] - mean) / std
-        before = len(df)
         df = df[(z.abs() <= self.threshold)]
-        after = len(df)
-        print(f"[{col}] z-score 기준 이상치 제거 완료: {before - after}개 제거")
       else:
         raise ValueError("지원하지 않는 이상치 제거 방법입니다.")
     return df
@@ -380,8 +370,5 @@ class PercentageOutlierRemover(BasePreprocessor):
   def transform(self, df):
     df = df.copy()
     for col in self.columns:
-      before = len(df)
       df = df[(df[col] >= self.low_bound) & (df[col] <= self.high_bound)]
-      after = len(df)
-      print(f"[{col}] Percentage 기준 이상치 제거 완료: {before - after}개 제거")
     return df

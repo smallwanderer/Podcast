@@ -1,21 +1,9 @@
-from preprocessing import *
+from Podcast.preprocessing import *
 import os
 import pandas as pd
 import yaml
 import shutil
 from ydata_profiling import ProfileReport
-
-name = 'preprocessed03'
-dataset_dir = './datasets'
-
-print(f"Making File Name {name} ... ")
-if not os.path.isdir(f"{dataset_dir}/{name}"):
-  os.makedirs(f"{dataset_dir}/{name}")
-
-print(f"Copying Config File to {dataset_dir}/{name}")
-if not os.path.isfile(f"{dataset_dir}/{name}/{name}_config.yaml"):
-  shutil.copy("./preprocessing_config.yaml", f"{dataset_dir}/{name}")
-  os.rename(f'{dataset_dir}/{name}/preprocessing_config.yaml', f'{dataset_dir}/{name}/{name}_config.yaml')
 
 preprocessor_classes = {
     "GroupMeanPreprocessor": GroupMeanPreprocessor,
@@ -39,13 +27,13 @@ class PreprocessingPipeline:
 
   def fit(self, df):
     for name, transformer in self.steps:
-      print(f"Fitting: {name}")
+      # print(f"Fitting: {name}")
       transformer.fit(df)
     return self
 
   def transform(self, df):
     for name, transformer in self.steps:
-      print(f"Transforming: {name}")
+      # print(f"Transforming: {name}")
       df = transformer.transform(df)
     return df
 
@@ -74,23 +62,36 @@ class PreprocessingPipelineFromConfig:
 
     return PreprocessingPipeline(self.steps)
 
-train = './datasets/train.csv'
-test = './datasets/test.csv'
-train_df = pd.read_csv(train)
-test_df = pd.read_csv(test)
+if __name__ == "__main__":
+  name = 'preprocessed03'
+  dataset_dir = './datasets'
 
-config_path = f'{dataset_dir}/{name}/{name}_config.yaml'
-builder = PreprocessingPipelineFromConfig(config_path)
-pipeline = builder.load_config()
+  print(f"Making File Name {name} ... ")
+  if not os.path.isdir(f"{dataset_dir}/{name}"):
+    os.makedirs(f"{dataset_dir}/{name}")
 
-train_df = pipeline.fit(train_df).transform(train_df)
-pd.set_option('display.max_columns', None)
-print(train_df.head())
+  print(f"Copying Config File to {dataset_dir}/{name}")
+  if not os.path.isfile(f"{dataset_dir}/{name}/{name}_config.yaml"):
+    shutil.copy("./preprocessing_config.yaml", f"{dataset_dir}/{name}")
+    os.rename(f'{dataset_dir}/{name}/preprocessing_config.yaml', f'{dataset_dir}/{name}/{name}_config.yaml')
 
-train_df.to_csv(f"{dataset_dir}/{name}/{name}.csv")
-profile = ProfileReport(train_df, title="Train Data EDA Report", explorative=True)
-profile.to_file(f"{dataset_dir}/{name}/{name}_eda_report.html")
-test_df = pipeline.transform(test_df)
+  train = './datasets/train.csv'
+  test = './datasets/test.csv'
+  train_df = pd.read_csv(train)
+  test_df = pd.read_csv(test)
+
+  config_path = f'{dataset_dir}/{name}/{name}_config.yaml'
+  builder = PreprocessingPipelineFromConfig(config_path)
+  pipeline = builder.load_config()
+
+  train_df = pipeline.fit(train_df).transform(train_df)
+  pd.set_option('display.max_columns', None)
+  print(train_df.head())
+
+  train_df.to_csv(f"{dataset_dir}/{name}/{name}.csv")
+  profile = ProfileReport(train_df, title="Train Data EDA Report", explorative=True)
+  profile.to_file(f"{dataset_dir}/{name}/{name}_eda_report.html")
+  test_df = pipeline.transform(test_df)
 
 """
 # 기능 테스트
