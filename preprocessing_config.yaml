@@ -13,18 +13,15 @@ preprocessing:
   - name: LabelEncoder
     class: LabelEncoding
     params:
-      nominal_col: ['Publication_Day', 'Publication_Time']
-
-  - name: OneHotEncoder
-    class: OneHotEncoding
-    params:
-      columns: ['Genre']
+      nominal_col: ['Publication_Day', 'Publication_Time', 'Genre']
 
   - name: TargetEncoder
     class: TargetEncodingKFold
     params:
       col_name: 'Podcast_Name'
       target_col: 'Listening_Time_minutes'
+      n_split: 5
+      smoothing: 10
 
   - name: DictMapper
     class: DictMapping
@@ -39,3 +36,20 @@ preprocessing:
     class: ExtractNumber
     params:
       column: ['Episode_Title']
+
+  - name: OutlierRemove
+    class: OutlierRemover
+    params:
+      columns: ['Episode_Length_minutes',
+                'Number_of_Ads']
+      method: "IQR"
+      threshold: 1.5
+
+
+  - name: PercentageRemover
+    class: PercentageOutlierRemover
+    params:
+      columns: ['Host_Popularity_percentage',
+               'Guest_Popularity_percentage']
+      low_bound: 0
+      high_bound: 100
